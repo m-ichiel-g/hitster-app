@@ -11,6 +11,13 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.local
+
+# Build-dataset script secrets & scratch data
+scripts/build-dataset/.env
+scripts/build-dataset/data/cache/
+scripts/build-dataset/data/raw/
 
 # Editor directories and files
 .vscode/*

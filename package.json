@@ -7,9 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dataset:fetch": "node scripts/build-dataset/fetch-playlist.mjs",
+    "dataset:resolve-years": "node scripts/build-dataset/resolve-years.mjs",
+    "dataset:build": "node scripts/build-dataset/build-dataset.mjs"
   },
   "dependencies": {
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^6.30.4"
