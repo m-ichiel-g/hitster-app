@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clearTokens, getValidAccessToken, handleAuthCallback, startLogin } from '../lib/spotifyAuth'
 import { createPlayer } from '../lib/spotifySdk'
+import { pausePlayback, playTrack, transferPlayback } from '../lib/spotifyApi'
 
 type Status = 'checking' | 'loggedOut' | 'loggingIn' | 'loggedIn' | 'error'
 type DeviceStatus = 'idle' | 'connecting' | 'ready' | 'error'
+type PlaybackStatus = 'idle' | 'starting' | 'playing' | 'error'
 
 export default function Player() {
   const navigate = useNavigate()
@@ -14,6 +16,9 @@ export default function Player() {
   const [deviceId, setDeviceId] = useState<string | null>(null)
   const [deviceError, setDeviceError] = useState('')
   const playerRef = useRef<Spotify.Player | null>(null)
+  const [trackId, setTrackId] = useState('')
+  const [playback, setPlayback] = useState<PlaybackStatus>('idle')
+  const [playbackError, setPlaybackError] = useState('')
 
   useEffect(() => {
     async function init() {
@@ -94,6 +99,38 @@ export default function Player() {
     setStatus('loggedOut')
   }
 
+  // Belangrijk voor iOS-Safari: activateElement() moet in dezelfde tap-handler aangeroepen
+  // worden als de eerste playback, anders speelt er niets af op de iPhone.
+  async function handlePlay() {
+    const player = playerRef.current
+    if (!player || !deviceId || !trackId.trim()) return
+
+    setPlayback('starting')
+    setPlaybackError('')
+    try {
+      await player.activateElement()
+      await transferPlayback(deviceId)
+      await playTrack(deviceId, trackId.trim())
+      setPlayback('playing')
+    } catch (err) {
+      setPlaybackError(err instanceof Error ? err.message : 'Afspelen mislukt.')
+      setPlayback('error')
+    }
+  }
+
+  async function handleStop() {
+    if (!deviceId) {
+      setPlayback('idle')
+      return
+    }
+    try {
+      await pausePlayback(deviceId)
+    } catch {
+      // Stop moet hoe dan ook teruggaan naar het testveld, ook als de aanroep zelf faalt.
+    }
+    setPlayback('idle')
+  }
+
   return (
     <div className="min-h-svh bg-white flex flex-col items-center justify-center px-6 py-12">
       <div className="w-20 h-20 rounded-2xl bg-gh-yellow flex items-center justify-center text-5xl mb-6 shadow">
@@ -126,8 +163,8 @@ export default function Player() {
           {deviceStatus === 'connecting' && (
             <p className="text-gray-500 text-center text-base max-w-xs mb-8">Speler wordt gestart…</p>
           )}
-          {deviceStatus === 'ready' && (
-            <p className="text-green-700 text-center text-base max-w-xs mb-8">
+          {deviceStatus === 'ready' && playback !== 'playing' && (
+            <p className="text-green-700 text-center text-base max-w-xs mb-2">
               🟢 Speler gereed
               <span className="block text-xs text-gray-400 mt-1">device: {deviceId}</span>
             </p>
@@ -136,12 +173,49 @@ export default function Player() {
             <p className="text-red-600 text-center text-base max-w-xs mb-8">{deviceError}</p>
           )}
 
-          <button
-            onClick={handleLogout}
-            className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
-          >
-            Log uit
-          </button>
+          {deviceStatus === 'ready' && playback !== 'playing' && (
+            <div className="w-full max-w-xs flex flex-col gap-3 mt-4 mb-8">
+              <input
+                type="text"
+                inputMode="text"
+                placeholder="Spotify track-id (testtrack)"
+                value={trackId}
+                onChange={(e) => setTrackId(e.target.value)}
+                className="w-full py-3 px-4 border border-gray-300 rounded-xl text-base"
+              />
+              <button
+                onClick={handlePlay}
+                disabled={!trackId.trim() || playback === 'starting'}
+                className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100 disabled:opacity-40"
+              >
+                {playback === 'starting' ? 'Bezig…' : '▶️ Speel af'}
+              </button>
+              {playback === 'error' && (
+                <p className="text-red-600 text-center text-sm">{playbackError}</p>
+              )}
+            </div>
+          )}
+
+          {playback === 'playing' && (
+            <div className="w-full max-w-xs flex flex-col items-center gap-6 mt-4 mb-8">
+              <p className="text-gh-navy-dark text-2xl font-semibold">🎵 speelt af…</p>
+              <button
+                onClick={handleStop}
+                className="w-full py-4 px-8 bg-gray-800 text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
+              >
+                ⏹ Stop
+              </button>
+            </div>
+          )}
+
+          {playback !== 'playing' && (
+            <button
+              onClick={handleLogout}
+              className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
+            >
+              Log uit
+            </button>
+          )}
         </>
       )}
 
