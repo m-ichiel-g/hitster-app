@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clearTokens, getValidAccessToken, handleAuthCallback, startLogin } from '../lib/spotifyAuth'
+import { createPlayer } from '../lib/spotifySdk'
 
 type Status = 'checking' | 'loggedOut' | 'loggingIn' | 'loggedIn' | 'error'
+type DeviceStatus = 'idle' | 'connecting' | 'ready' | 'error'
 
 export default function Player() {
   const navigate = useNavigate()
   const [status, setStatus] = useState<Status>('checking')
   const [errorMessage, setErrorMessage] = useState('')
+  const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>('idle')
+  const [deviceId, setDeviceId] = useState<string | null>(null)
+  const [deviceError, setDeviceError] = useState('')
+  const playerRef = useRef<Spotify.Player | null>(null)
 
   useEffect(() => {
     async function init() {
@@ -42,6 +48,41 @@ export default function Player() {
 
     init()
   }, [])
+
+  useEffect(() => {
+    if (status !== 'loggedIn') return
+
+    let cancelled = false
+    setDeviceStatus('connecting')
+
+    createPlayer((callback) => {
+      getValidAccessToken().then((token) => {
+        if (token) callback(token)
+      })
+    })
+      .then(({ player, deviceId }) => {
+        if (cancelled) {
+          player.disconnect()
+          return
+        }
+        playerRef.current = player
+        setDeviceId(deviceId)
+        setDeviceStatus('ready')
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setDeviceError(err instanceof Error ? err.message : 'Speler kon niet starten.')
+        setDeviceStatus('error')
+      })
+
+    return () => {
+      cancelled = true
+      playerRef.current?.disconnect()
+      playerRef.current = null
+      setDeviceStatus('idle')
+      setDeviceId(null)
+    }
+  }, [status])
 
   async function handleLogin() {
     setStatus('loggingIn')
@@ -80,9 +121,21 @@ export default function Player() {
 
       {status === 'loggedIn' && (
         <>
-          <p className="text-gh-navy-dark text-center text-base max-w-xs mb-8">
-            ✅ Ingelogd bij Spotify. (Speler-initialisatie komt in de volgende stap.)
-          </p>
+          <p className="text-gh-navy-dark text-center text-base max-w-xs mb-2">✅ Ingelogd bij Spotify</p>
+
+          {deviceStatus === 'connecting' && (
+            <p className="text-gray-500 text-center text-base max-w-xs mb-8">Speler wordt gestart…</p>
+          )}
+          {deviceStatus === 'ready' && (
+            <p className="text-green-700 text-center text-base max-w-xs mb-8">
+              🟢 Speler gereed
+              <span className="block text-xs text-gray-400 mt-1">device: {deviceId}</span>
+            </p>
+          )}
+          {deviceStatus === 'error' && (
+            <p className="text-red-600 text-center text-base max-w-xs mb-8">{deviceError}</p>
+          )}
+
           <button
             onClick={handleLogout}
             className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
