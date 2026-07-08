@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DATASETS, loadDataset, type Dataset } from '../lib/datasets'
 import DeckCard from '../components/DeckCard'
+import CardBack from '../components/CardBack'
+import HelpButton from '../components/HelpButton'
+import ExplainOverlay from '../components/ExplainOverlay'
 import {
   clearDrawState,
   clearSelection,
@@ -27,6 +30,7 @@ export default function Deck() {
   const [selection, setSelection] = useState<DeckSelection | null>(() => loadSelection())
   const [dataset, setDataset] = useState<Dataset | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showExplain, setShowExplain] = useState(false)
 
   // Kiezer-formulier state (alleen relevant zolang er nog geen selectie is)
   const [pickedDatasetId, setPickedDatasetId] = useState(DATASETS[0].id)
@@ -77,12 +81,18 @@ export default function Deck() {
 
   const [flipped, setFlipped] = useState(false)
 
+  // Terugbladeren: null = de huidige (live) kaart; anders index in drawState.order
+  // van een al-eerder-getrokken kaart, altijd getoond op de onthulling-kant.
+  const [viewIndex, setViewIndex] = useState<number | null>(null)
+  const browsedTrack = viewIndex !== null ? tracksById.get(drawState?.order[viewIndex] ?? '') : undefined
+
   function startGame() {
     const next: DeckSelection = { datasetId: pickedDatasetId, pond: pickedPond }
     clearDrawState()
     saveSelection(next)
     setSelection(next)
     setFlipped(false)
+    setViewIndex(null)
   }
 
   function changeSelection() {
@@ -93,6 +103,7 @@ export default function Deck() {
     setDrawState(null)
     setError(null)
     setFlipped(false)
+    setViewIndex(null)
   }
 
   function nextCard() {
@@ -101,16 +112,60 @@ export default function Deck() {
     saveDrawState(next)
     setDrawState(next)
     setFlipped(false)
+    setViewIndex(null)
   }
 
   function newGame() {
     if (!selection) return
     setDrawState(resetDrawState(selection, pondTracks.map((t) => t.id)))
     setFlipped(false)
+    setViewIndex(null)
+  }
+
+  function goToPrevious() {
+    if (!drawState) return
+    if (viewIndex === null) {
+      if (drawState.drawnCount > 0) setViewIndex(drawState.drawnCount - 1)
+    } else if (viewIndex > 0) {
+      setViewIndex(viewIndex - 1)
+    }
+  }
+
+  function goToNext() {
+    if (!drawState || viewIndex === null) return
+    if (viewIndex + 1 >= drawState.drawnCount) {
+      setViewIndex(null)
+    } else {
+      setViewIndex(viewIndex + 1)
+    }
+  }
+
+  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  const SWIPE_THRESHOLD = 40
+
+  function handleTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0]
+    touchStart.current = { x: t.clientX, y: t.clientY }
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    const start = touchStart.current
+    touchStart.current = null
+    if (!start) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    if (Math.abs(dx) > SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx > 0) goToPrevious()
+      else goToNext()
+    }
   }
 
   return (
-    <div className="min-h-svh bg-white flex flex-col items-center justify-center px-6 py-12">
+    <div className="relative min-h-svh bg-white flex flex-col items-center justify-center px-6 py-12">
+      <HelpButton onClick={() => setShowExplain(true)} />
+      {showExplain && <ExplainOverlay onClose={() => setShowExplain(false)} />}
+
       <div className="w-20 h-20 rounded-2xl bg-gh-navy flex items-center justify-center text-5xl mb-6 shadow">
         🃏
       </div>
@@ -156,10 +211,7 @@ export default function Deck() {
             </div>
           </div>
 
-          <button
-            onClick={startGame}
-            className="w-full py-4 px-6 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-          >
+          <button onClick={startGame} className="w-full btn-primary">
             Start
           </button>
         </div>
@@ -169,36 +221,66 @@ export default function Deck() {
         <>
           {error && (
             <p className="text-red-600 text-center text-base max-w-xs">
-              Fout bij laden: {error}
+              ⚠️ Dataset kon niet laden: {error}
             </p>
           )}
           {!error && !dataset && (
             <p className="text-gray-500 text-center text-base max-w-xs">Dataset laden…</p>
           )}
           {dataset && drawState && !pondDone && currentTrack && (
-            <div className="w-full max-w-xs flex flex-col items-center gap-4">
-              <DeckCard
-                track={currentTrack}
-                cardNumber={drawState.drawnCount + 1}
-                total={drawState.order.length}
-                datasetName={dataset.name}
-                flipped={flipped}
-                onFlip={() => setFlipped(true)}
-              />
-              {!flipped ? (
-                <button
-                  onClick={() => setFlipped(true)}
-                  className="w-full py-4 px-6 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-                >
-                  Draai kaartje om
-                </button>
+            <div
+              className="w-full max-w-xs flex flex-col items-center gap-4"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
+              {viewIndex === null ? (
+                <>
+                  <DeckCard
+                    track={currentTrack}
+                    cardNumber={drawState.drawnCount + 1}
+                    total={drawState.order.length}
+                    datasetName={dataset.name}
+                    flipped={flipped}
+                  />
+                  {!flipped ? (
+                    <button onClick={() => setFlipped(true)} className="w-full btn-primary">
+                      Draai kaartje om
+                    </button>
+                  ) : (
+                    <button onClick={nextCard} className="w-full btn-primary">
+                      Volgende kaart
+                    </button>
+                  )}
+                  {drawState.drawnCount > 0 && (
+                    <button
+                      onClick={goToPrevious}
+                      className="text-sm text-gray-500 underline underline-offset-2"
+                    >
+                      ← Vorige kaart bekijken
+                    </button>
+                  )}
+                </>
               ) : (
-                <button
-                  onClick={nextCard}
-                  className="w-full py-4 px-6 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-                >
-                  Volgende kaart
-                </button>
+                browsedTrack && (
+                  <>
+                    <p className="text-sm font-medium text-gray-500">
+                      Kaart {viewIndex + 1} van {drawState.order.length} · eerder getrokken
+                    </p>
+                    <CardBack track={browsedTrack} datasetName={dataset.name} />
+                    <div className="w-full flex gap-3">
+                      <button
+                        onClick={goToPrevious}
+                        disabled={viewIndex === 0}
+                        className="btn-secondary flex-1 disabled:opacity-40"
+                      >
+                        ← Vorige
+                      </button>
+                      <button onClick={goToNext} className="btn-primary flex-1 text-base py-3">
+                        {viewIndex + 1 >= drawState.drawnCount ? 'Naar huidige kaart →' : 'Volgende →'}
+                      </button>
+                    </div>
+                  </>
+                )
               )}
             </div>
           )}
@@ -207,35 +289,26 @@ export default function Deck() {
               <p className="text-gh-navy-dark text-center text-lg font-semibold">
                 Playlist op — nieuw spel?
               </p>
-              <button
-                onClick={newGame}
-                className="w-full py-4 px-6 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-              >
+              <button onClick={newGame} className="w-full btn-primary">
                 Nieuw spel
               </button>
             </div>
           )}
           {dataset && !pondDone && (
-            <button
-              onClick={newGame}
-              className="mt-6 py-2 px-5 bg-gray-100 text-gray-600 text-sm font-medium rounded-xl active:scale-95 transition-transform duration-100"
-            >
+            <button onClick={newGame} className="btn-secondary mt-6 py-2 px-5 text-sm text-gray-600">
               Nieuw spel / reset
             </button>
           )}
           <button
             onClick={changeSelection}
-            className="mt-2 py-2 px-5 bg-gray-100 text-gray-600 text-sm font-medium rounded-xl active:scale-95 transition-transform duration-100"
+            className="btn-secondary mt-2 py-2 px-5 text-sm text-gray-600"
           >
             Andere playlist/vijver kiezen
           </button>
         </>
       )}
 
-      <button
-        onClick={() => navigate('/')}
-        className="mt-4 py-3 px-8 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
-      >
+      <button onClick={() => navigate('/')} className="btn-secondary mt-4 px-8">
         ← Terug
       </button>
     </div>

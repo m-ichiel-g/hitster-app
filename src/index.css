@@ -14,3 +14,40 @@
     min-height: 100svh;
   }
 }
+
+@layer components {
+  /* Grote uitgelichte keuze (bv. moduskeuze op Welkom) */
+  .btn-hero {
+    @apply py-5 px-6 text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100;
+  }
+  .btn-hero-navy {
+    @apply btn-hero bg-gh-navy text-white;
+  }
+  .btn-hero-yellow {
+    @apply btn-hero bg-gh-yellow text-gh-navy-dark;
+  }
+
+  /* Hoofdactie op een scherm (Start, Draai kaartje om, Scan volgend nummer, ...) */
+  .btn-primary {
+    @apply py-4 px-6 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100;
+  }
+
+  /* Neutrale/afsluitende actie (Terug, Annuleren, Log uit, ...) */
+  .btn-secondary {
+    @apply py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100;
+  }
+
+  /* Duidelijk eindpunt van een actieve handeling (Stop) */
+  .btn-dark {
+    @apply py-4 px-6 bg-gray-800 text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes overlay-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

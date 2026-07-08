@@ -5,6 +5,8 @@ import { createPlayer } from '../lib/spotifySdk'
 import { extractTrackId, playTrack, transferPlayback } from '../lib/spotifyApi'
 import { startScanner, type ScannerHandle } from '../lib/scanner'
 import { releaseWakeLock, requestWakeLock } from '../lib/wakeLock'
+import HelpButton from '../components/HelpButton'
+import ExplainOverlay from '../components/ExplainOverlay'
 
 type Status = 'checking' | 'loggedOut' | 'loggingIn' | 'loggedIn' | 'error'
 type DeviceStatus = 'idle' | 'connecting' | 'ready' | 'error'
@@ -25,6 +27,8 @@ export default function Player() {
   const [scanError, setScanError] = useState('')
   const scannerRef = useRef<ScannerHandle | null>(null)
   const [isPaused, setIsPaused] = useState(false)
+  const [showExplain, setShowExplain] = useState(false)
+  const [deviceRetryKey, setDeviceRetryKey] = useState(0)
 
   useEffect(() => {
     return () => {
@@ -192,7 +196,7 @@ export default function Player() {
       setDeviceStatus('idle')
       setDeviceId(null)
     }
-  }, [status])
+  }, [status, deviceRetryKey])
 
   async function handleLogin() {
     setStatus('loggingIn')
@@ -236,7 +240,10 @@ export default function Player() {
   }
 
   return (
-    <div className="min-h-svh bg-white flex flex-col items-center justify-center px-6 py-12">
+    <div className="relative min-h-svh bg-white flex flex-col items-center justify-center px-6 py-12">
+      <HelpButton onClick={() => setShowExplain(true)} />
+      {showExplain && <ExplainOverlay onClose={() => setShowExplain(false)} />}
+
       <div className="w-20 h-20 rounded-2xl bg-gh-yellow flex items-center justify-center text-5xl mb-6 shadow">
         🎵
       </div>
@@ -251,10 +258,7 @@ export default function Player() {
           <p className="text-gray-500 text-center text-base max-w-xs mb-8">
             Log in met je Spotify Premium-account om te kunnen afspelen.
           </p>
-          <button
-            onClick={handleLogin}
-            className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-          >
+          <button onClick={handleLogin} className="btn-primary px-8">
             Log in bij Spotify
           </button>
         </>
@@ -274,7 +278,15 @@ export default function Player() {
             </p>
           )}
           {deviceStatus === 'error' && (
-            <p className="text-red-600 text-center text-base max-w-xs mb-8">{deviceError}</p>
+            <>
+              <p className="text-red-600 text-center text-base max-w-xs mb-4">⚠️ {deviceError}</p>
+              <button
+                onClick={() => setDeviceRetryKey((k) => k + 1)}
+                className="btn-primary px-8 mb-8"
+              >
+                Opnieuw verbinden
+              </button>
+            </>
           )}
 
           {deviceStatus === 'ready' && playback !== 'playing' && (
@@ -289,39 +301,27 @@ export default function Player() {
                 <p className="text-gray-500 text-center text-base">Bezig met afspelen…</p>
               )}
               {playback === 'idle' && scanStatus === 'idle' && (
-                <button
-                  onClick={handleStartScan}
-                  className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-                >
+                <button onClick={handleStartScan} className="btn-primary px-8">
                   📷 Scan volgend nummer
                 </button>
               )}
               {playback === 'idle' && scanStatus === 'scanning' && (
-                <button
-                  onClick={handleCancelScan}
-                  className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
-                >
+                <button onClick={handleCancelScan} className="btn-secondary">
                   Annuleren
                 </button>
               )}
               {playback === 'idle' && scanStatus === 'error' && (
                 <>
-                  <p className="text-red-600 text-center text-sm max-w-xs">{scanError}</p>
-                  <button
-                    onClick={handleStartScan}
-                    className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-                  >
+                  <p className="text-red-600 text-center text-sm max-w-xs">⚠️ {scanError}</p>
+                  <button onClick={handleStartScan} className="btn-primary px-8">
                     Opnieuw proberen
                   </button>
                 </>
               )}
               {playback === 'error' && (
                 <>
-                  <p className="text-red-600 text-center text-sm max-w-xs">{playbackError}</p>
-                  <button
-                    onClick={handleStartScan}
-                    className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-                  >
+                  <p className="text-red-600 text-center text-sm max-w-xs">⚠️ {playbackError}</p>
+                  <button onClick={handleStartScan} className="btn-primary px-8">
                     Opnieuw scannen
                   </button>
                 </>
@@ -335,33 +335,21 @@ export default function Player() {
                 {isPaused ? '⏸ gepauzeerd' : '🎵 speelt af…'}
               </p>
               <div className="w-full flex gap-3">
-                <button
-                  onClick={handleTogglePause}
-                  className="flex-1 py-4 px-4 bg-gh-navy text-white text-base font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-                >
+                <button onClick={handleTogglePause} className="btn-primary flex-1 text-base px-4">
                   {isPaused ? '▶️ Hervat' : '⏸ Pauze'}
                 </button>
-                <button
-                  onClick={handleRestart}
-                  className="flex-1 py-4 px-4 bg-gh-navy text-white text-base font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-                >
+                <button onClick={handleRestart} className="btn-primary flex-1 text-base px-4">
                   ⏮ Opnieuw
                 </button>
               </div>
-              <button
-                onClick={handleStop}
-                className="w-full py-4 px-8 bg-gray-800 text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-              >
+              <button onClick={handleStop} className="btn-dark w-full px-8">
                 ⏹ Stop
               </button>
             </div>
           )}
 
           {playback !== 'playing' && (
-            <button
-              onClick={handleLogout}
-              className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
-            >
+            <button onClick={handleLogout} className="btn-secondary">
               Log uit
             </button>
           )}
@@ -370,20 +358,14 @@ export default function Player() {
 
       {status === 'error' && (
         <>
-          <p className="text-red-600 text-center text-base max-w-xs mb-8">{errorMessage}</p>
-          <button
-            onClick={handleLogin}
-            className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
-          >
+          <p className="text-red-600 text-center text-base max-w-xs mb-8">⚠️ {errorMessage}</p>
+          <button onClick={handleLogin} className="btn-primary px-8">
             Opnieuw inloggen
           </button>
         </>
       )}
 
-      <button
-        onClick={() => navigate('/')}
-        className="mt-10 py-3 px-8 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
-      >
+      <button onClick={() => navigate('/')} className="btn-secondary mt-10 px-8">
         ← Terug
       </button>
     </div>
