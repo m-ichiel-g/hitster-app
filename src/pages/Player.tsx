@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { clearTokens, getValidAccessToken, handleAuthCallback, startLogin } from '../lib/spotifyAuth'
 import { createPlayer } from '../lib/spotifySdk'
 import { pausePlayback, playTrack, transferPlayback } from '../lib/spotifyApi'
+import { startScanner, type ScannerHandle } from '../lib/scanner'
 
 type Status = 'checking' | 'loggedOut' | 'loggingIn' | 'loggedIn' | 'error'
 type DeviceStatus = 'idle' | 'connecting' | 'ready' | 'error'
 type PlaybackStatus = 'idle' | 'starting' | 'playing' | 'error'
+type ScanStatus = 'idle' | 'scanning' | 'error'
 
 export default function Player() {
   const navigate = useNavigate()
@@ -19,6 +21,43 @@ export default function Player() {
   const [trackId, setTrackId] = useState('')
   const [playback, setPlayback] = useState<PlaybackStatus>('idle')
   const [playbackError, setPlaybackError] = useState('')
+  const [scanStatus, setScanStatus] = useState<ScanStatus>('idle')
+  const [scanError, setScanError] = useState('')
+  const [lastScanned, setLastScanned] = useState('')
+  const scannerRef = useRef<ScannerHandle | null>(null)
+
+  useEffect(() => {
+    return () => {
+      scannerRef.current?.stop()
+    }
+  }, [])
+
+  async function handleStartScan() {
+    setScanError('')
+    setLastScanned('')
+    setScanStatus('scanning')
+    // Volgorde is belangrijk: dit is de user-gesture, dus hier ontgrendelen we straks
+    // (stap 3) ook de iOS-audio via player.activateElement(), vóór de camera opent.
+    const handle = await startScanner(
+      (decodedText) => {
+        scannerRef.current = null
+        setScanStatus('idle')
+        setLastScanned(decodedText)
+      },
+      (message) => {
+        scannerRef.current = null
+        setScanError(message)
+        setScanStatus('error')
+      },
+    )
+    scannerRef.current = handle
+  }
+
+  async function handleCancelScan() {
+    await scannerRef.current?.stop()
+    scannerRef.current = null
+    setScanStatus('idle')
+  }
 
   useEffect(() => {
     async function init() {
@@ -174,7 +213,48 @@ export default function Player() {
           )}
 
           {deviceStatus === 'ready' && playback !== 'playing' && (
-            <div className="w-full max-w-xs flex flex-col gap-3 mt-4 mb-8">
+            <div className="w-full max-w-xs flex flex-col gap-3 mt-4 mb-6">
+              {scanStatus === 'idle' && (
+                <button
+                  onClick={handleStartScan}
+                  className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
+                >
+                  📷 Scan volgend nummer
+                </button>
+              )}
+              {scanStatus === 'scanning' && (
+                <div className="flex flex-col items-center gap-3">
+                  <div id="qr-scanner-view" className="w-full max-w-xs rounded-xl overflow-hidden" />
+                  <button
+                    onClick={handleCancelScan}
+                    className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
+                  >
+                    Annuleren
+                  </button>
+                </div>
+              )}
+              {scanStatus === 'error' && (
+                <>
+                  <p className="text-red-600 text-center text-sm max-w-xs">{scanError}</p>
+                  <button
+                    onClick={handleStartScan}
+                    className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
+                  >
+                    Opnieuw proberen
+                  </button>
+                </>
+              )}
+              {lastScanned && (
+                <p className="text-gh-navy-dark text-center text-sm break-all">
+                  ✅ Gescand (test): {lastScanned}
+                </p>
+              )}
+            </div>
+          )}
+
+          {deviceStatus === 'ready' && playback !== 'playing' && (
+            <div className="w-full max-w-xs flex flex-col gap-3 mb-8">
+              <p className="text-xs text-gray-400 text-center">— of testveld (tijdelijk) —</p>
               <input
                 type="text"
                 inputMode="text"
