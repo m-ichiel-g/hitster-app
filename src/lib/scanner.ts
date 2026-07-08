@@ -14,7 +14,15 @@ export async function startScanner(
   onScan: (decodedText: string) => void,
   onError: (message: string) => void,
 ): Promise<ScannerHandle> {
-  const scanner = new Html5Qrcode(ELEMENT_ID, { verbose: false })
+  let scanner: Html5Qrcode
+  try {
+    scanner = new Html5Qrcode(ELEMENT_ID, { verbose: false })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    onError(`Scanner kon niet starten: ${message}`)
+    return { stop: async () => {} }
+  }
+
   let stopped = false
 
   const stop = async () => {

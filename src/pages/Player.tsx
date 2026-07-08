@@ -36,21 +36,26 @@ export default function Player() {
     setScanError('')
     setLastScanned('')
     setScanStatus('scanning')
-    // Volgorde is belangrijk: dit is de user-gesture, dus hier ontgrendelen we straks
-    // (stap 3) ook de iOS-audio via player.activateElement(), vóór de camera opent.
-    const handle = await startScanner(
-      (decodedText) => {
-        scannerRef.current = null
-        setScanStatus('idle')
-        setLastScanned(decodedText)
-      },
-      (message) => {
-        scannerRef.current = null
-        setScanError(message)
-        setScanStatus('error')
-      },
-    )
-    scannerRef.current = handle
+    try {
+      // Volgorde is belangrijk: dit is de user-gesture, dus hier ontgrendelen we straks
+      // (stap 3) ook de iOS-audio via player.activateElement(), vóór de camera opent.
+      const handle = await startScanner(
+        (decodedText) => {
+          scannerRef.current = null
+          setScanStatus('idle')
+          setLastScanned(decodedText)
+        },
+        (message) => {
+          scannerRef.current = null
+          setScanError(message)
+          setScanStatus('error')
+        },
+      )
+      scannerRef.current = handle
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : 'Scanner kon niet starten.')
+      setScanStatus('error')
+    }
   }
 
   async function handleCancelScan() {
@@ -214,6 +219,12 @@ export default function Player() {
 
           {deviceStatus === 'ready' && playback !== 'playing' && (
             <div className="w-full max-w-xs flex flex-col gap-3 mt-4 mb-6">
+              <div
+                id="qr-scanner-view"
+                className={
+                  scanStatus === 'scanning' ? 'w-full max-w-xs rounded-xl overflow-hidden' : 'hidden'
+                }
+              />
               {scanStatus === 'idle' && (
                 <button
                   onClick={handleStartScan}
@@ -223,15 +234,12 @@ export default function Player() {
                 </button>
               )}
               {scanStatus === 'scanning' && (
-                <div className="flex flex-col items-center gap-3">
-                  <div id="qr-scanner-view" className="w-full max-w-xs rounded-xl overflow-hidden" />
-                  <button
-                    onClick={handleCancelScan}
-                    className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
-                  >
-                    Annuleren
-                  </button>
-                </div>
+                <button
+                  onClick={handleCancelScan}
+                  className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
+                >
+                  Annuleren
+                </button>
               )}
               {scanStatus === 'error' && (
                 <>
