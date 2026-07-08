@@ -4,6 +4,7 @@ import { clearTokens, getValidAccessToken, handleAuthCallback, startLogin } from
 import { createPlayer } from '../lib/spotifySdk'
 import { extractTrackId, playTrack, transferPlayback } from '../lib/spotifyApi'
 import { startScanner, type ScannerHandle } from '../lib/scanner'
+import { releaseWakeLock, requestWakeLock } from '../lib/wakeLock'
 
 type Status = 'checking' | 'loggedOut' | 'loggingIn' | 'loggedIn' | 'error'
 type DeviceStatus = 'idle' | 'connecting' | 'ready' | 'error'
@@ -18,7 +19,6 @@ export default function Player() {
   const [deviceId, setDeviceId] = useState<string | null>(null)
   const [deviceError, setDeviceError] = useState('')
   const playerRef = useRef<Spotify.Player | null>(null)
-  const [trackId, setTrackId] = useState('')
   const [playback, setPlayback] = useState<PlaybackStatus>('idle')
   const [playbackError, setPlaybackError] = useState('')
   const [scanStatus, setScanStatus] = useState<ScanStatus>('idle')
@@ -31,6 +31,27 @@ export default function Player() {
       scannerRef.current?.stop()
     }
   }, [])
+
+  // Wake Lock aan zodra er wordt afgespeeld; uit bij Stop/fout/ophalen van de pagina.
+  useEffect(() => {
+    if (playback !== 'playing') return
+    requestWakeLock()
+    return () => {
+      releaseWakeLock()
+    }
+  }, [playback])
+
+  // Wake locks vervallen automatisch als het tabblad naar de achtergrond gaat; opnieuw
+  // aanvragen zodra de pagina weer zichtbaar wordt, maar alleen als er nog afgespeeld wordt.
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible' && playback === 'playing') {
+        requestWakeLock()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [playback])
 
   async function handleStartScan() {
     const player = playerRef.current
@@ -183,26 +204,6 @@ export default function Player() {
     setStatus('loggedOut')
   }
 
-  // Belangrijk voor iOS-Safari: activateElement() moet in dezelfde tap-handler aangeroepen
-  // worden als de eerste playback, anders speelt er niets af op de iPhone.
-  async function handlePlay() {
-    const player = playerRef.current
-    if (!player || !deviceId || !trackId.trim()) return
-
-    setPlayback('starting')
-    setPlaybackError('')
-    try {
-      await player.activateElement()
-      await transferPlayback(deviceId)
-      await playTrack(deviceId, trackId.trim())
-      setIsPaused(false)
-      setPlayback('playing')
-    } catch (err) {
-      setPlaybackError(err instanceof Error ? err.message : 'Afspelen mislukt.')
-      setPlayback('error')
-    }
-  }
-
   async function handleStop() {
     const player = playerRef.current
     try {
@@ -325,27 +326,6 @@ export default function Player() {
                   </button>
                 </>
               )}
-            </div>
-          )}
-
-          {deviceStatus === 'ready' && playback !== 'playing' && (
-            <div className="w-full max-w-xs flex flex-col gap-3 mb-8">
-              <p className="text-xs text-gray-400 text-center">— of testveld (tijdelijk) —</p>
-              <input
-                type="text"
-                inputMode="text"
-                placeholder="Spotify track-id (testtrack)"
-                value={trackId}
-                onChange={(e) => setTrackId(e.target.value)}
-                className="w-full py-3 px-4 border border-gray-300 rounded-xl text-base"
-              />
-              <button
-                onClick={handlePlay}
-                disabled={!trackId.trim() || playback === 'starting'}
-                className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100 disabled:opacity-40"
-              >
-                {playback === 'starting' ? 'Bezig…' : '▶️ Speel af'}
-              </button>
             </div>
           )}
 
