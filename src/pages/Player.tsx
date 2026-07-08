@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clearTokens, getValidAccessToken, handleAuthCallback, startLogin } from '../lib/spotifyAuth'
 import { createPlayer } from '../lib/spotifySdk'
-import { extractTrackId, pausePlayback, playTrack, transferPlayback } from '../lib/spotifyApi'
+import { extractTrackId, playTrack, transferPlayback } from '../lib/spotifyApi'
 import { startScanner, type ScannerHandle } from '../lib/scanner'
 
 type Status = 'checking' | 'loggedOut' | 'loggingIn' | 'loggedIn' | 'error'
@@ -24,6 +24,7 @@ export default function Player() {
   const [scanStatus, setScanStatus] = useState<ScanStatus>('idle')
   const [scanError, setScanError] = useState('')
   const scannerRef = useRef<ScannerHandle | null>(null)
+  const [isPaused, setIsPaused] = useState(false)
 
   useEffect(() => {
     return () => {
@@ -85,6 +86,7 @@ export default function Player() {
     try {
       await transferPlayback(deviceId)
       await playTrack(deviceId, id)
+      setIsPaused(false)
       setPlayback('playing')
     } catch (err) {
       setPlaybackError(err instanceof Error ? err.message : 'Afspelen mislukt.')
@@ -149,6 +151,10 @@ export default function Player() {
           return
         }
         playerRef.current = player
+        player.addListener('player_state_changed', (state) => {
+          if (!state) return
+          setIsPaused(state.paused)
+        })
         setDeviceId(deviceId)
         setDeviceStatus('ready')
       })
@@ -189,6 +195,7 @@ export default function Player() {
       await player.activateElement()
       await transferPlayback(deviceId)
       await playTrack(deviceId, trackId.trim())
+      setIsPaused(false)
       setPlayback('playing')
     } catch (err) {
       setPlaybackError(err instanceof Error ? err.message : 'Afspelen mislukt.')
@@ -197,16 +204,34 @@ export default function Player() {
   }
 
   async function handleStop() {
-    if (!deviceId) {
-      setPlayback('idle')
-      return
-    }
+    const player = playerRef.current
     try {
-      await pausePlayback(deviceId)
+      await player?.pause()
     } catch {
-      // Stop moet hoe dan ook teruggaan naar het testveld, ook als de aanroep zelf faalt.
+      // Stop moet hoe dan ook teruggaan naar de scanknop, ook als de aanroep zelf faalt.
     }
+    setIsPaused(false)
     setPlayback('idle')
+  }
+
+  async function handleTogglePause() {
+    const player = playerRef.current
+    if (!player) return
+    try {
+      await player.togglePlay()
+    } catch {
+      // player_state_changed corrigeert de knop-status vanzelf als dit toch niet lukte.
+    }
+  }
+
+  async function handleRestart() {
+    const player = playerRef.current
+    if (!player) return
+    try {
+      await player.seek(0)
+    } catch {
+      // negeren; gebruiker kan het gewoon opnieuw proberen
+    }
   }
 
   return (
@@ -325,8 +350,24 @@ export default function Player() {
           )}
 
           {playback === 'playing' && (
-            <div className="w-full max-w-xs flex flex-col items-center gap-6 mt-4 mb-8">
-              <p className="text-gh-navy-dark text-2xl font-semibold">🎵 speelt af…</p>
+            <div className="w-full max-w-xs flex flex-col items-center gap-4 mt-4 mb-8">
+              <p className="text-gh-navy-dark text-2xl font-semibold">
+                {isPaused ? '⏸ gepauzeerd' : '🎵 speelt af…'}
+              </p>
+              <div className="w-full flex gap-3">
+                <button
+                  onClick={handleTogglePause}
+                  className="flex-1 py-4 px-4 bg-gh-navy text-white text-base font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
+                >
+                  {isPaused ? '▶️ Hervat' : '⏸ Pauze'}
+                </button>
+                <button
+                  onClick={handleRestart}
+                  className="flex-1 py-4 px-4 bg-gh-navy text-white text-base font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
+                >
+                  ⏮ Opnieuw
+                </button>
+              </div>
               <button
                 onClick={handleStop}
                 className="w-full py-4 px-8 bg-gray-800 text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"

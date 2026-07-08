@@ -50,12 +50,6 @@ export async function playTrack(deviceId: string, trackId: string): Promise<void
   })
 }
 
-export async function pausePlayback(deviceId: string): Promise<void> {
-  await apiRequest(`/me/player/pause?device_id=${encodeURIComponent(deviceId)}`, {
-    method: 'PUT',
-  })
-}
-
 // De QR bevat normaliter de kale track-id, maar we zijn defensief voor het geval er per
 // ongeluk een volledige URI (spotify:track:<id>) of deel-URL (open.spotify.com/track/<id>) in staat.
 export function extractTrackId(rawPayload: string): string | null {
