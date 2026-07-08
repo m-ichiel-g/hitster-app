@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clearTokens, getValidAccessToken, handleAuthCallback, startLogin } from '../lib/spotifyAuth'
 import { createPlayer } from '../lib/spotifySdk'
-import { pausePlayback, playTrack, transferPlayback } from '../lib/spotifyApi'
+import { extractTrackId, pausePlayback, playTrack, transferPlayback } from '../lib/spotifyApi'
 import { startScanner, type ScannerHandle } from '../lib/scanner'
 
 type Status = 'checking' | 'loggedOut' | 'loggingIn' | 'loggedIn' | 'error'
@@ -23,7 +23,6 @@ export default function Player() {
   const [playbackError, setPlaybackError] = useState('')
   const [scanStatus, setScanStatus] = useState<ScanStatus>('idle')
   const [scanError, setScanError] = useState('')
-  const [lastScanned, setLastScanned] = useState('')
   const scannerRef = useRef<ScannerHandle | null>(null)
 
   useEffect(() => {
@@ -33,17 +32,29 @@ export default function Player() {
   }, [])
 
   async function handleStartScan() {
+    const player = playerRef.current
+    if (!player) return
+
     setScanError('')
-    setLastScanned('')
+    setPlaybackError('')
+    setPlayback('idle')
     setScanStatus('scanning')
+
+    // Dit is de user-gesture: activateElement() ontgrendelt hier de iOS-audio, vóórdat de
+    // camera opent. De track speelt pas later (na de scan-callback, buiten de gesture) —
+    // zonder deze aanroep hier blijft afspelen op iPhone-Safari stil.
     try {
-      // Volgorde is belangrijk: dit is de user-gesture, dus hier ontgrendelen we straks
-      // (stap 3) ook de iOS-audio via player.activateElement(), vóór de camera opent.
+      await player.activateElement()
+    } catch {
+      // Op sommige browsers al actief/geen effect nodig; niet fataal.
+    }
+
+    try {
       const handle = await startScanner(
         (decodedText) => {
           scannerRef.current = null
           setScanStatus('idle')
-          setLastScanned(decodedText)
+          void playScannedTrack(decodedText)
         },
         (message) => {
           scannerRef.current = null
@@ -55,6 +66,29 @@ export default function Player() {
     } catch (err) {
       setScanError(err instanceof Error ? err.message : 'Scanner kon niet starten.')
       setScanStatus('error')
+    }
+  }
+
+  async function playScannedTrack(rawPayload: string) {
+    const id = extractTrackId(rawPayload)
+    if (!id) {
+      setScanError('Onherkenbare QR-code. Probeer opnieuw te scannen.')
+      setScanStatus('error')
+      return
+    }
+
+    const player = playerRef.current
+    if (!player || !deviceId) return
+
+    setPlayback('starting')
+    setPlaybackError('')
+    try {
+      await transferPlayback(deviceId)
+      await playTrack(deviceId, id)
+      setPlayback('playing')
+    } catch (err) {
+      setPlaybackError(err instanceof Error ? err.message : 'Afspelen mislukt.')
+      setPlayback('error')
     }
   }
 
@@ -225,7 +259,10 @@ export default function Player() {
                   scanStatus === 'scanning' ? 'w-full max-w-xs rounded-xl overflow-hidden' : 'hidden'
                 }
               />
-              {scanStatus === 'idle' && (
+              {playback === 'starting' && (
+                <p className="text-gray-500 text-center text-base">Bezig met afspelen…</p>
+              )}
+              {playback === 'idle' && scanStatus === 'idle' && (
                 <button
                   onClick={handleStartScan}
                   className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
@@ -233,7 +270,7 @@ export default function Player() {
                   📷 Scan volgend nummer
                 </button>
               )}
-              {scanStatus === 'scanning' && (
+              {playback === 'idle' && scanStatus === 'scanning' && (
                 <button
                   onClick={handleCancelScan}
                   className="py-3 px-6 bg-gray-100 text-gray-700 text-base font-medium rounded-xl active:scale-95 transition-transform duration-100"
@@ -241,7 +278,7 @@ export default function Player() {
                   Annuleren
                 </button>
               )}
-              {scanStatus === 'error' && (
+              {playback === 'idle' && scanStatus === 'error' && (
                 <>
                   <p className="text-red-600 text-center text-sm max-w-xs">{scanError}</p>
                   <button
@@ -252,10 +289,16 @@ export default function Player() {
                   </button>
                 </>
               )}
-              {lastScanned && (
-                <p className="text-gh-navy-dark text-center text-sm break-all">
-                  ✅ Gescand (test): {lastScanned}
-                </p>
+              {playback === 'error' && (
+                <>
+                  <p className="text-red-600 text-center text-sm max-w-xs">{playbackError}</p>
+                  <button
+                    onClick={handleStartScan}
+                    className="py-4 px-8 bg-gh-navy text-white text-lg font-semibold rounded-2xl shadow active:scale-95 transition-transform duration-100"
+                  >
+                    Opnieuw scannen
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -278,9 +321,6 @@ export default function Player() {
               >
                 {playback === 'starting' ? 'Bezig…' : '▶️ Speel af'}
               </button>
-              {playback === 'error' && (
-                <p className="text-red-600 text-center text-sm">{playbackError}</p>
-              )}
             </div>
           )}
 

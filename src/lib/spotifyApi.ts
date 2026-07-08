@@ -55,3 +55,19 @@ export async function pausePlayback(deviceId: string): Promise<void> {
     method: 'PUT',
   })
 }
+
+// De QR bevat normaliter de kale track-id, maar we zijn defensief voor het geval er per
+// ongeluk een volledige URI (spotify:track:<id>) of deel-URL (open.spotify.com/track/<id>) in staat.
+export function extractTrackId(rawPayload: string): string | null {
+  const trimmed = rawPayload.trim()
+
+  const uriMatch = trimmed.match(/^spotify:track:([A-Za-z0-9]+)/)
+  if (uriMatch) return uriMatch[1]
+
+  const urlMatch = trimmed.match(/open\.spotify\.com\/track\/([A-Za-z0-9]+)/)
+  if (urlMatch) return urlMatch[1]
+
+  if (/^[A-Za-z0-9]+$/.test(trimmed)) return trimmed
+
+  return null
+}
